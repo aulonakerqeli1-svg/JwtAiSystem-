@@ -1,0 +1,337 @@
+﻿<!DOCTYPE html>
+<html lang="sq">
+<head>
+    <meta charset="UTF-8">
+    <title>JWT AI Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            font-family: sans-serif;
+            background: #0d1117;
+            color: #e6edf3
+        }
+
+        header {
+            background: #161b22;
+            padding: 16px 24px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            gap: 16px
+        }
+
+            header h1 {
+                font-size: 18px
+            }
+
+        .stats {
+            display: flex;
+            gap: 12px;
+            padding: 16px 24px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            flex-wrap: wrap
+        }
+
+        .stat {
+            background: #21262d;
+            padding: 12px 20px;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 120px
+        }
+
+            .stat .num {
+                font-size: 28px;
+                font-weight: bold;
+                color: #58a6ff
+            }
+
+            .stat .lbl {
+                font-size: 12px;
+                color: #8b949e;
+                margin-top: 4px
+            }
+
+        .filters {
+            padding: 12px 24px;
+            display: flex;
+            gap: 12px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            flex-wrap: wrap
+        }
+
+        select, input {
+            background: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        th {
+            background: #161b22;
+            padding: 10px 16px;
+            text-align: left;
+            font-size: 12px;
+            color: #8b949e;
+            border-bottom: 1px solid #30363d
+        }
+
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #21262d;
+            font-size: 13px
+        }
+
+        .HIGH {
+            background: #ff000033;
+            color: #ff7b72;
+            border: 1px solid #ff7b72;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px
+        }
+
+        .MEDIUM {
+            background: #f0883e33;
+            color: #ffa657;
+            border: 1px solid #ffa657;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px
+        }
+
+        .LOW {
+            background: #3fb95033;
+            color: #56d364;
+            border: 1px solid #56d364;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px
+        }
+
+        .blocked-section {
+            padding: 16px 24px
+        }
+
+        .blocked-item {
+            background: #ff000022;
+            border: 1px solid #ff7b72;
+            padding: 10px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px
+        }
+
+        tr.flash {
+            animation: fl 1.5s
+        }
+
+        @keyframes fl {
+            0% {
+                background: #1a3a1a
+            }
+
+            100% {
+                background: transparent
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔐 JWT AI Security Dashboard</h1>
+        <span id="conn" style="font-size:12px;color:#56d364">
+            ● Connected
+        </span>
+    </header>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="num" id="s-total">0</div>
+            <div class="lbl">Total Logins</div>
+        </div>
+        <div class="stat">
+            <div class="num" id="s-anomaly"
+                 style="color:#ff7b72">0</div>
+            <div class="lbl">Anomali</div>
+        </div>
+        <div class="stat">
+            <div class="num" id="s-blocked"
+                 style="color:#ffa657">0</div>
+            <div class="lbl">Bllokuar</div>
+        </div>
+        <div class="stat">
+            <div class="num" id="s-ok"
+                 style="color:#56d364">0</div>
+            <div class="lbl">Normal</div>
+        </div>
+    </div>
+
+    <div class="filters">
+        <input id="f-user" placeholder="🔍 Filtro user..."
+               oninput="render()">
+        <input id="f-ip" placeholder="🔍 Filtro IP..."
+               oninput="render()">
+        <select id="f-status" onchange="render()">
+            <option value="">Të gjitha</option>
+            <option value="blocked">Vetëm bllokuar</option>
+            <option value="ok">Vetëm normal</option>
+        </select>
+    </div>
+
+    <div style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Koha</th>
+                    <th>Username</th>
+                    <th>IP</th>
+                    <th>Vendi</th>
+                    <th>Status</th>
+                    <th>AI Score</th>
+                    <th>Arsyeja</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+    <div class="blocked-section">
+        <h3 style="color:#ff7b72;margin-bottom:12px">
+            🚫 Llogaritë e Bllokuara Tani
+        </h3>
+        <div id="blocked-list">
+            <p style="color:#8b949e">Asnjë llogari e bllokuar</p>
+        </div>
+    </div>
+
+    <script>
+const events=[];
+let total=0,anomaly=0,blocked=0,ok=0;
+
+const conn=new signalR.HubConnectionBuilder()
+  .withUrl("/dashboardHub")
+  .withAutomaticReconnect()
+  .build();
+
+conn.on("LoginAlert",e=>{
+  events.unshift(e);
+  total++;
+  if(e.blocked){anomaly++;blocked++;}
+  else ok++;
+  updateStats();
+  render();
+  if(e.blocked)loadBlocked();
+});
+
+conn.onreconnecting(()=>{
+  document.getElementById('conn').textContent=
+    '● Reconnecting...';
+  document.getElementById('conn').style.color='#ffa657';
+});
+conn.onreconnected(()=>{
+  document.getElementById('conn').textContent=
+    '● Connected';
+  document.getElementById('conn').style.color='#56d364';
+  conn.invoke("JoinAdmin");
+});
+
+conn.start()
+  .then(()=>conn.invoke("JoinAdmin"))
+  .catch(console.error);
+
+fetch('/api/auth/events').then(r=>r.json()).then(data=>{
+  data.forEach(e=>events.push({
+    username:e.username,ip:e.ipAddress,
+    country:e.country,score:e.aiScore,
+    reason:e.reason,blocked:e.isAnomaly,
+    timestamp:e.timestamp
+  }));
+  total=events.length;
+  anomaly=events.filter(e=>e.blocked).length;
+  ok=events.filter(e=>!e.blocked).length;
+  updateStats();render();
+});
+
+fetch('/api/auth/blocked')
+  .then(r=>r.json()).then(renderBlocked);
+
+function updateStats(){
+  document.getElementById('s-total').textContent=total;
+  document.getElementById('s-anomaly').textContent=anomaly;
+  document.getElementById('s-blocked').textContent=blocked;
+  document.getElementById('s-ok').textContent=ok;
+}
+
+function render(){
+  const fu=document.getElementById('f-user')
+    .value.toLowerCase();
+  const fi=document.getElementById('f-ip')
+    .value.toLowerCase();
+  const fs=document.getElementById('f-status').value;
+  const filtered=events.filter(e=>
+    (!fu||e.username?.toLowerCase().includes(fu))&&
+    (!fi||e.ip?.toLowerCase().includes(fi))&&
+    (!fs||(fs==='blocked'&&e.blocked)||
+         (fs==='ok'&&!e.blocked))
+  );
+  const sc=s=>s>0.6?'HIGH':s>0.3?'MEDIUM':'LOW';
+  document.getElementById('tbody').innerHTML=
+    filtered.slice(0,100).map((e,i)=>`
+    <tr class="${i===0?'flash':''}">
+      <td style="color:#8b949e;white-space:nowrap">
+        ${new Date(e.timestamp).toLocaleTimeString()}
+      </td>
+      <td><strong>${e.username}</strong></td>
+      <td style="font-family:monospace;font-size:12px">
+        ${e.ip}
+      </td>
+      <td>${e.country||'Unknown'}</td>
+      <td>${e.blocked
+        ?'<span class="HIGH">🚫 BLLOKUAR</span>'
+        :'<span class="LOW">✅ Normal</span>'}</td>
+      <td><span class="${sc(e.score)}">
+        ${(e.score*100).toFixed(1)}%
+      </span></td>
+      <td style="color:#8b949e;font-size:12px">
+        ${e.reason||'-'}
+      </td>
+    </tr>`).join('');
+}
+
+function loadBlocked(){
+  fetch('/api/auth/blocked')
+    .then(r=>r.json()).then(renderBlocked);
+}
+
+function renderBlocked(list){
+  document.getElementById('blocked-list').innerHTML=
+    !list||list.length===0
+      ?'<p style="color:#8b949e">Asnjë e bllokuar</p>'
+      :list.map(b=>`
+        <div class="blocked-item">
+          🚫 <strong>${b.username}</strong> —
+          beri në
+          <strong>
+            ${new Date(b.until).toLocaleTimeString()}
+          </strong>
+        </div>`).join('');
+}
+    </script>
+</body>
+</html>
